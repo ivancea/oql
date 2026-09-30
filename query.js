@@ -42,9 +42,17 @@ function to_js(o) {
       case 'java.util.LinkedHashSet':
          return linkedhash_set_to_js(o);
       case 'java.util.HashMap':
+      case 'java.util.LinkedHashMap':
          return hash_map_to_js(o);
       case 'java.util.TreeMap':
          return tree_map_to_js(o);
+      case 'java.util.Collections$UnmodifiableMap':
+      case 'java.util.Collections$UnmodifiableSortedMap':
+         return to_js(o.m);
+      case 'java.util.Collections$EmptyMap':
+         return {};
+      case 'java.util.Collections$SingletonList':
+         return [to_js(o.element)];
       case 'org.elasticsearch.common.unit.Fuzziness':
          return {
             'fuzziness': to_js(o.fuzziness),
@@ -119,6 +127,14 @@ function to_js(o) {
          return query_string(o);
       case 'org.elasticsearch.index.query.functionscore.FunctionScoreQueryBuilder':
          return function_score_query(o);
+      case 'org.elasticsearch.index.query.functionscore.ScriptScoreQueryBuilder':
+         return script_score_query(o);
+      case 'org.elasticsearch.index.mapper.extras.RankFeatureQueryBuilder':
+         return rank_feature_query(o);
+      case 'org.elasticsearch.index.query.ScriptQueryBuilder':
+         return script_query(o);
+      case 'org.elasticsearch.xpack.application.rules.RuleQueryBuilder':
+         return rule_query(o);
       case 'org.elasticsearch.search.aggregations.AggregatorFactories$Builder':
           return aggfactory_Builder(o);
       case 'org.elasticsearch.search.aggregations.bucket.filter.FilterAggregationBuilder':
@@ -147,6 +163,10 @@ function to_js(o) {
          return to_js(o.queryBuilder);
       case 'org.elasticsearch.search.sort.ScriptSortBuilder':
          return scriptSortBuilder(o);
+      case 'org.elasticsearch.search.sort.FieldSortBuilder':
+         return field_sort(o);
+      case 'org.elasticsearch.search.sort.ScoreSortBuilder':
+         return score_sort(o);
       default:
          return 'unsupported type: ' + toHtml(o);
    }
@@ -161,6 +181,126 @@ function scriptSortBuilder(o) {
          'lang': to_js(o.script.lang),
          'params': to_js(o.script.params)
       }
+   }
+}
+
+function score_sort(o) {
+   var out = {};
+   out["_score"] = true;
+   if (o.order != null) {
+      out["order"] = to_js(o.order.name);
+   }
+   return out;
+}
+
+function field_sort(o) {
+   var out = {};
+   out["field"] = to_js(o.fieldName);
+   if (o.order != null) {
+      out["order"] = to_js(o.order.name);
+   }
+   if (o.missing != null) {
+      out["missing"] = to_js(o.missing);
+   }
+   if (o.unmappedType != null) {
+      out["unmappedType"] = to_js(o.unmappedType);
+   }
+   if (o.numericType != null) {
+      out["numericType"] = to_js(o.numericType);
+   }
+   if (o.sortMode != null) {
+      out["sortMode"] = to_js(o.sortMode.name);
+   }
+   if (o.format != null) {
+      out["format"] = to_js(o.format);
+   }
+   return out;
+}
+
+function rule_query(o) {
+   return {
+      'rule': {
+         'organicQuery': to_js(o.organicQuery),
+         'matchCriteria': to_js(o.matchCriteria),
+         'rulesetIds': to_js(o.rulesetIds)
+      }
+   };
+}
+
+function script_fields(script) {
+   /* Heap objects are InstanceDump wrappers, so ScriptType.toString() is not the
+    * Java method. Read the name field, as with the other enums. */
+   var out = {};
+   if (script.type != null) {
+      out["type"] = to_js(script.type.name);
+   }
+   if (script.idOrCode != null) {
+      out["idOrCode"] = to_js(script.idOrCode);
+   }
+   if (script.lang != null) {
+      out["lang"] = to_js(script.lang);
+   }
+   if (script.options != null) {
+      out["options"] = to_js(script.options);
+   }
+   if (script.params != null) {
+      out["params"] = to_js(script.params);
+   }
+   return out;
+}
+
+function script_query(o) {
+   return {
+      'script': script_fields(o.script)
+   };
+}
+
+function script_score_query(o) {
+   var scriptScore = {
+      'query': to_js(o.query),
+      'script': script_fields(o.script)
+   };
+   if (o.minScore != null) {
+      scriptScore["minScore"] = to_js(o.minScore);
+   }
+   return { 'script_score': scriptScore };
+}
+
+function rank_feature_query(o) {
+   var rankFeature = {
+      'field': to_js(o.field)
+   };
+   var scoreFunction = rank_feature_score_function(o.scoreFunction);
+   if (scoreFunction != null) {
+      rankFeature["scoreFunction"] = scoreFunction;
+   }
+   return { 'rank_feature': rankFeature };
+}
+
+function rank_feature_score_function(fn) {
+   if (fn == null) {
+      return null;
+   }
+   switch (classof(fn).name) {
+      case 'org.elasticsearch.index.mapper.extras.RankFeatureQueryBuilder$ScoreFunction$Log':
+         return { 'log': { 'scalingFactor': to_js(fn.scalingFactor) } };
+      case 'org.elasticsearch.index.mapper.extras.RankFeatureQueryBuilder$ScoreFunction$Saturation':
+         var saturation = {};
+         if (fn.pivot != null) {
+            saturation["pivot"] = to_js(fn.pivot);
+         }
+         return { 'saturation': saturation };
+      case 'org.elasticsearch.index.mapper.extras.RankFeatureQueryBuilder$ScoreFunction$Sigmoid':
+         return {
+            'sigmoid': {
+               'pivot': to_js(fn.pivot),
+               'exp': to_js(fn.exp)
+            }
+         };
+      case 'org.elasticsearch.index.mapper.extras.RankFeatureQueryBuilder$ScoreFunction$Linear':
+         return { 'linear': {} };
+      default:
+         return to_js(fn);
    }
 }
 
@@ -361,17 +501,23 @@ function linkedhash_set_to_js(es) {
    return rs;
 }
 
-function hash_map_to_js(map) {
-   return hash_map_to_js(map, {});
-}
-
 function hash_map_to_js(map, rs) {
-  for (var i in map.table) {
+  if (rs == null) {
+    rs = {};
+  }
+  if (map == null || map.table == null) {
+    return rs;
+  }
+  for (var i = 0; i < map.table.length; i++) {
     var entry = map.table[i];
-    if (entry != null) {
-      rs[to_js(entry.key)] = to_js(entry.value);
+    while (entry != null) {
+      if (entry.key != null) {
+        rs[to_js(entry.key)] = to_js(entry.value);
+      }
+      entry = entry.next;
     }
   }
+  return rs;
 }
 
 function tree_map_to_js(map) {
